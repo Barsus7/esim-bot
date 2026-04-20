@@ -397,23 +397,13 @@ async def usdt_pay(message: types.Message):
         return
 
     usdt = cents_to_usdt(plan[3])
-    wallet = "TXXXXXXXXXX"  # вставь свой адрес сюда
-
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(
-                text="📋 Скопировать адрес",
-                copy_text=CopyTextButton(text=wallet)
-            )
-        ]]
-    )
+    wallet = "TSP8CN1WjbKeukmToJYpXD5PDSBYFNDEa1"
 
     await message.answer(
         f"💰 Оплата через USDT (TRC-20)\n\n"
         f"📦 {plan[0]} — {usdt}\n\n"
         f"Адрес: <code>{wallet}</code>\n\n"
         "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_wooft",
-        reply_markup=kb,
         parse_mode="HTML"
     )
 
