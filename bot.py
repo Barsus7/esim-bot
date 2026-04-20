@@ -166,7 +166,7 @@ main_kb = ReplyKeyboardMarkup(
 payment_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Перевод СБП")],
-        [KeyboardButton(text="💰 USDT")],
+        [KeyboardButton(text="💰 USDT (сеть TRC20)")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -387,7 +387,7 @@ async def sbp(message: types.Message):
 # -----------------------------
 # ОПЛАТА: USDT
 # -----------------------------
-@dp.message(lambda msg: msg.text == "💰 USDT")
+@dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
 async def usdt_pay(message: types.Message):
     state = USER_STATE.get(message.chat.id, {})
     plan = state.get("plan")
