@@ -267,7 +267,7 @@ async def custom_country_selected(callback: types.CallbackQuery):
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="✉️ Написать в поддержку",
-                url=f"https://t.me/Who_let_the_dog_out_wooft?text=Хочу+eSIM+для+{country_encoded}"
+                url=f"https://t.me/Who_let_the_dog_out_woof?text=Хочу+eSIM+для+{country_encoded}"
             )
         ]]
     )
