@@ -19,7 +19,6 @@ dp = Dispatcher()
 # -----------------------------
 # КУРС ВАЛЮТ
 # -----------------------------
-
 USD_RATE = {"value": 90.0}
 
 
@@ -31,36 +30,30 @@ async def update_usd_rate():
                     "https://www.cbr-xml-daily.ru/daily_json.js"
                 ) as resp:
                     data = await resp.json(content_type=None)
-
-                    rate = data["Valute"]["USD"]["Value"]
-
-                    # приводим к float и защищаем от мусора
-                    rate = float(rate)
-
+                    rate = float(data["Valute"]["USD"]["Value"])
                     if rate > 0:
                         USD_RATE["value"] = rate
-
         except Exception:
             pass
-
         await asyncio.sleep(3600)
 
 
-def rub_to_usd(rub: int) -> float:
-    rate = USD_RATE.get("value")
-
-    if not rate or rate <= 0:
-        return 0.0
-
-    return round(rub / rate, 2)
+def cents_to_usd(cents: int) -> str:
+    """Центы → строка доллары. 159 → '$1.59'"""
+    return f"${cents / 100:.2f}"
 
 
-def rub_to_stars(rub: int) -> int:
-    STAR_RATE_RUB = 1.8199  # худший курс (безопасный)
+def cents_to_rub(cents: int) -> int:
+    """Центы → рубли по курсу ЦБ"""
+    rate = USD_RATE.get("value", 90.0)
+    return round(cents / 100 * rate)
 
-    stars = rub / STAR_RATE_RUB
 
-    return max(1, int(stars + 0.5))
+def cents_to_usdt(cents: int) -> str:
+    """Центы → строка USDT. 159 → '1.59 USDT'"""
+    return f"{cents / 100:.2f} USDT"
+
+
 # -----------------------------
 # STATE
 # -----------------------------
@@ -68,7 +61,7 @@ USER_STATE: dict[int, dict] = {}
 
 # -----------------------------
 # DATA — обычные страны
-# Тариф: (название, срок, скорость, цена_руб)
+# Тариф: (название, срок, скорость, цена_центы)
 # -----------------------------
 COUNTRIES = {
     "🇹🇷 Турция": [
@@ -159,9 +152,6 @@ CUSTOM_COUNTRIES = [
     "🇸🇪 Швеция", "🇱🇰 Шри-Ланка", "🇪🇨 Эквадор", "🇪🇹 Эфиопия", "🇿🇦 ЮАР",
 ]
 
-# Все ключи для роутинга
-ALL_COUNTRIES = set(COUNTRIES.keys()) | set(BUNDLES.keys())
-
 # -----------------------------
 # KEYBOARDS
 # -----------------------------
@@ -176,7 +166,6 @@ main_kb = ReplyKeyboardMarkup(
 payment_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Перевод СБП")],
-        [KeyboardButton(text="⭐ Stars")],
         [KeyboardButton(text="💰 USDT")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
@@ -185,18 +174,15 @@ payment_kb = ReplyKeyboardMarkup(
 
 
 def countries_kb() -> ReplyKeyboardMarkup:
-    """Клавиатура выбора страны — по 2 в строку"""
     country_list = list(COUNTRIES.keys())
     bundle_list = list(BUNDLES.keys())
     all_items = country_list + bundle_list
 
-    # По 2 кнопки в строку
     rows = []
     for i in range(0, len(all_items), 2):
         pair = all_items[i:i+2]
         rows.append([KeyboardButton(text=c) for c in pair])
 
-    # Кнопки внизу
     rows.append([KeyboardButton(text="🔍 Страна по запросу")])
     rows.append([KeyboardButton(text="⬅️ Назад")])
 
@@ -204,12 +190,11 @@ def countries_kb() -> ReplyKeyboardMarkup:
 
 
 def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup:
-    """Инлайн-кнопки с тарифами"""
     plans = BUNDLES[country_name] if is_bundle else COUNTRIES[country_name]
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=f"{p[0]} — {p[3]} ₽ (${rub_to_usd(p[3])})",
+                text=f"{p[0]} — {cents_to_rub(p[3])} ₽ ({cents_to_usd(p[3])})",
                 callback_data=f"plan_{i}"
             )]
             for i, p in enumerate(plans)
@@ -218,7 +203,6 @@ def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup
 
 
 def custom_countries_kb() -> InlineKeyboardMarkup:
-    """Инлайн-кнопки со 100 странами по запросу — по 2 в строку"""
     rows = []
     for i in range(0, len(CUSTOM_COUNTRIES), 2):
         pair = CUSTOM_COUNTRIES[i:i+2]
@@ -255,7 +239,7 @@ async def buy(message: types.Message):
 
 
 # -----------------------------
-# СТРАНА ПО ЗАПРОСУ — показываем список
+# СТРАНА ПО ЗАПРОСУ
 # -----------------------------
 @dp.message(lambda msg: msg.text == "🔍 Страна по запросу")
 async def custom_country_menu(message: types.Message):
@@ -266,9 +250,6 @@ async def custom_country_menu(message: types.Message):
     )
 
 
-# -----------------------------
-# СТРАНА ПО ЗАПРОСУ — выбор из списка
-# -----------------------------
 @dp.callback_query(lambda c: c.data.startswith("custom_"))
 async def custom_country_selected(callback: types.CallbackQuery):
     await callback.answer()
@@ -284,7 +265,7 @@ async def custom_country_selected(callback: types.CallbackQuery):
     await callback.message.answer(
         f"📩 Запрос на {country_name} отправлен!\n\n"
         f"Напиши в поддержку и укажи страну — мы подберём тариф:\n"
-        f"👉 @support\n\n"
+        f"👉 @Who_let_the_dog_out_wooft\n\n"
         f"Сообщение: «Хочу eSIM для {country_name}»",
         reply_markup=countries_kb()
     )
@@ -317,7 +298,7 @@ async def bundle(message: types.Message):
 
 
 # -----------------------------
-# PLAN SELECT (callback)
+# PLAN SELECT
 # -----------------------------
 @dp.callback_query(lambda c: c.data.startswith("plan_"))
 async def plan(callback: types.CallbackQuery):
@@ -329,10 +310,7 @@ async def plan(callback: types.CallbackQuery):
     is_bundle = state.get("is_bundle", False)
 
     if not country_name:
-        await callback.message.answer(
-            "⚠️ Что-то пошло не так, начни заново",
-            reply_markup=main_kb
-        )
+        await callback.message.answer("⚠️ Что-то пошло не так, начни заново", reply_markup=main_kb)
         return
 
     index = int(callback.data.split("_")[1])
@@ -346,14 +324,15 @@ async def plan(callback: types.CallbackQuery):
     USER_STATE[user_id]["plan"] = selected_plan
     USER_STATE[user_id]["step"] = "payment"
 
-    usd = rub_to_usd(selected_plan[3])
-    stars = rub_to_stars(selected_plan[3])
+    rub = cents_to_rub(selected_plan[3])
+    usd = cents_to_usd(selected_plan[3])
+    usdt = cents_to_usdt(selected_plan[3])
 
     await callback.message.answer(
         f"📦 {selected_plan[0]}\n"
         f"📅 {selected_plan[1]}\n"
         f"🌍 {selected_plan[2]}\n\n"
-        f"💰 {selected_plan[3]} ₽  |  ${usd}  |  {stars} ⭐  |  {usd} USDT\n\n"
+        f"💰 {rub} ₽  |  {usd}  |  {usdt}\n\n"
         "Выбери способ оплаты:",
         reply_markup=payment_kb
     )
@@ -372,10 +351,7 @@ async def back(message: types.Message):
         is_bundle = state.get("is_bundle", False)
         USER_STATE[message.chat.id]["step"] = "plan"
         USER_STATE[message.chat.id].pop("plan", None)
-        await message.answer(
-            "📦 Выбери тариф:",
-            reply_markup=plans_kb(country_name, is_bundle=is_bundle)
-        )
+        await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name, is_bundle=is_bundle))
 
     elif step in ("plan", "custom"):
         USER_STATE[message.chat.id] = {"step": "country"}
@@ -398,36 +374,13 @@ async def sbp(message: types.Message):
         await message.answer("⚠️ Сначала выбери тариф")
         return
 
+    rub = cents_to_rub(plan[3])
+
     await message.answer(
         f"💳 Оплата через СБП\n\n"
-        f"📦 {plan[0]} — {plan[3]} ₽\n\n"
+        f"📦 {plan[0]} — {rub} ₽\n\n"
         "Переведи на номер: +7XXXXXXXXXX\n"
-        "После оплаты отправь чек: @support"
-    )
-
-
-# -----------------------------
-# ОПЛАТА: Stars
-# -----------------------------
-@dp.message(lambda msg: msg.text == "⭐ Stars")
-async def stars_pay(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
-    plan = state.get("plan")
-
-    if not plan:
-        await message.answer("⚠️ Сначала выбери тариф")
-        return
-
-    stars_amount = rub_to_stars(plan[3])
-
-    await bot.send_invoice(
-        chat_id=message.chat.id,
-        title=plan[0],
-        description=f"{plan[1]} | {plan[2]}",
-        payload="esim_stars",
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice(label=plan[0], amount=stars_amount)]
+        "После оплаты отправь чек: @Who_let_the_dog_out_wooft"
     )
 
 
@@ -435,7 +388,7 @@ async def stars_pay(message: types.Message):
 # ОПЛАТА: USDT
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💰 USDT")
-async def usdt(message: types.Message):
+async def usdt_pay(message: types.Message):
     state = USER_STATE.get(message.chat.id, {})
     plan = state.get("plan")
 
@@ -443,42 +396,14 @@ async def usdt(message: types.Message):
         await message.answer("⚠️ Сначала выбери тариф")
         return
 
-    usd = rub_to_usd(plan[3])
+    usdt = cents_to_usdt(plan[3])
 
     await message.answer(
         f"💰 Оплата через USDT (TRC-20)\n\n"
-        f"📦 {plan[0]} — {usd} USDT\n\n"
+        f"📦 {plan[0]} — {usdt}\n\n"
         "Адрес кошелька: TXXXXXXXXXX\n"
-        "После оплаты отправь хэш транзакции: @support"
+        "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_wooft"
     )
-
-
-# -----------------------------
-# PRE-CHECKOUT
-# -----------------------------
-@dp.pre_checkout_query()
-async def checkout(q: types.PreCheckoutQuery):
-    await bot.answer_pre_checkout_query(q.id, ok=True)
-
-
-# -----------------------------
-# УСПЕШНАЯ ОПЛАТА
-# -----------------------------
-@dp.message(F.successful_payment)
-async def success(message: types.Message):
-    plan = USER_STATE.get(message.chat.id, {}).get("plan")
-    plan_name = plan[0] if plan else "Тариф"
-
-    await message.answer(
-        "✅ Оплата прошла!\n\n"
-        f"📦 {plan_name}\n"
-        "📲 eSIM готова к установке\n\n"
-        "🔗 QR-код для установки:\nhttps://example.com/esim\n\n"
-        "Если возникнут вопросы — @support",
-        reply_markup=main_kb
-    )
-
-    USER_STATE.pop(message.chat.id, None)
 
 
 # -----------------------------
@@ -490,16 +415,18 @@ async def prices(message: types.Message):
     for country_name, plans in COUNTRIES.items():
         lines.append(f"{country_name}")
         for p in plans:
-            usd = rub_to_usd(p[3])
-            lines.append(f"  • {p[0]} / {p[1]} — {p[3]} ₽ (${usd})")
+            rub = cents_to_rub(p[3])
+            usd = cents_to_usd(p[3])
+            lines.append(f"  • {p[0]} / {p[1]} — {rub} ₽ ({usd})")
         lines.append("")
 
     lines.append("— Бандлы —\n")
     for bundle_name, plans in BUNDLES.items():
         lines.append(f"{bundle_name}")
         for p in plans:
-            usd = rub_to_usd(p[3])
-            lines.append(f"  • {p[0]} / {p[1]} — {p[3]} ₽ (${usd})")
+            rub = cents_to_rub(p[3])
+            usd = cents_to_usd(p[3])
+            lines.append(f"  • {p[0]} / {p[1]} — {rub} ₽ ({usd})")
         lines.append("")
 
     await message.answer("\n".join(lines))
@@ -509,8 +436,9 @@ async def prices(message: types.Message):
 async def support(message: types.Message):
     await message.answer(
         "🛠 Поддержка: @Who_let_the_dog_out_wooft\n"
-        "Время ответа: обычно до 30 минут, но скорее всего это будет гораздо быстрее\n"
-        "Рабочее время по МСК: 10.00-20.00"
+        "Время ответа: обычно до 30 минут в рабочее время,\n" 
+         "но скорее всего это будет гораздо быстрее\n"
+        "Рабочее время по МСК: 10.00-18.00"
     )
 
 
