@@ -412,25 +412,83 @@ async def usdt_pay(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💸 Цены")
 async def prices(message: types.Message):
-    lines = ["📋 Актуальные тарифы:\n"]
-    for country_name, plans in COUNTRIES.items():
-        lines.append(f"{country_name}")
-        for p in plans:
-            rub = cents_to_rub(p[3])
-            usd = cents_to_usd(p[3])
-            lines.append(f"  • {p[0]} / {p[1]} — {rub} ₽ ({usd})")
-        lines.append("")
+    USER_STATE[message.chat.id] = {"step": "country"}
 
-    lines.append("— Бандлы —\n")
-    for bundle_name, plans in BUNDLES.items():
-        lines.append(f"{bundle_name}")
-        for p in plans:
-            rub = cents_to_rub(p[3])
-            usd = cents_to_usd(p[3])
-            lines.append(f"  • {p[0]} / {p[1]} — {rub} ₽ ({usd})")
-        lines.append("")
+    # Инлайн-кнопки для обычных стран
+    country_rows = []
+    country_list = list(COUNTRIES.keys())
+    for i in range(0, len(country_list), 2):
+        pair = country_list[i:i+2]
+        country_rows.append([
+            InlineKeyboardButton(text=c, callback_data=f"country_{i+j}")
+            for j, c in enumerate(pair)
+        ])
 
-    await message.answer("\n".join(lines))
+    # Инлайн-кнопки для бандлов
+    bundle_list = list(BUNDLES.keys())
+    for i in range(0, len(bundle_list), 2):
+        pair = bundle_list[i:i+2]
+        country_rows.append([
+            InlineKeyboardButton(text=b, callback_data=f"bundle_{i+j}")
+            for j, b in enumerate(pair)
+        ])
+
+    # Кнопка запроса
+    country_rows.append([
+        InlineKeyboardButton(text="🔍 Страна по запросу", callback_data="goto_custom")
+    ])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=country_rows)
+
+    await message.answer("🌍 Выбери страну чтобы посмотреть тарифы и купить:", reply_markup=kb)
+
+
+@dp.callback_query(lambda c: c.data.startswith("country_"))
+async def prices_country_selected(callback: types.CallbackQuery):
+    await callback.answer()
+    index = int(callback.data.split("_")[1])
+    country_list = list(COUNTRIES.keys())
+
+    if index >= len(country_list):
+        await callback.message.answer("⚠️ Что-то пошло не так")
+        return
+
+    country_name = country_list[index]
+    USER_STATE[callback.message.chat.id] = {
+        "country": country_name,
+        "is_bundle": False,
+        "step": "plan"
+    }
+    await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name))
+
+
+@dp.callback_query(lambda c: c.data.startswith("bundle_"))
+async def prices_bundle_selected(callback: types.CallbackQuery):
+    await callback.answer()
+    index = int(callback.data.split("_")[1])
+    bundle_list = list(BUNDLES.keys())
+
+    if index >= len(bundle_list):
+        await callback.message.answer("⚠️ Что-то пошло не так")
+        return
+
+    bundle_name = bundle_list[index]
+    USER_STATE[callback.message.chat.id] = {
+        "country": bundle_name,
+        "is_bundle": True,
+        "step": "plan"
+    }
+    await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(bundle_name, is_bundle=True))
+
+
+@dp.callback_query(lambda c: c.data == "goto_custom")
+async def prices_goto_custom(callback: types.CallbackQuery):
+    await callback.answer()
+    USER_STATE[callback.message.chat.id] = {"step": "custom"}
+    await callback.message.answer(
+        "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
+        reply_markup=custom_countries_kb()
+    )
 
 
 @dp.message(lambda msg: msg.text == "🛠 Поддержка")
