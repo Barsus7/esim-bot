@@ -379,7 +379,7 @@ async def sbp(message: types.Message):
     await message.answer(
         f"💳 Оплата через СБП\n\n"
         f"📦 {plan[0]} — {rub} ₽\n\n"
-        "Переведи на номер: +7XXXXXXXXXX\n"
+        "Переведи на номер: +79853808937\n"
         "После оплаты отправь чек: @Who_let_the_dog_out_wooft"
     )
 
