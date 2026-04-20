@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, CopyTextButton
+    LabeledPrice
 )
 from aiogram.filters import Command
 
