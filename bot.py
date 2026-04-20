@@ -262,12 +262,21 @@ async def custom_country_selected(callback: types.CallbackQuery):
     country_name = CUSTOM_COUNTRIES[index]
     USER_STATE[callback.message.chat.id] = {"step": "country"}
 
+    country_encoded = country_name.replace(" ", "+")
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="✉️ Написать в поддержку",
+                url=f"https://t.me/Who_let_the_dog_out_wooft?text=Хочу+eSIM+для+{country_encoded}"
+            )
+        ]]
+    )
+
     await callback.message.answer(
-        f"📩 Запрос на {country_name} отправлен!\n\n"
-        f"Напиши в поддержку и укажи страну — мы подберём тариф:\n"
-        f"👉 @Who_let_the_dog_out_wooft\n\n"
-        f"Сообщение: «Хочу eSIM для {country_name}»",
-        reply_markup=countries_kb()
+        f"🔍 {country_name}\n\n"
+        "Этой страны пока нет в каталоге.\n"
+        "Нажми кнопку — мы уточним наличие и пришлём цену:",
+        reply_markup=kb
     )
 
 
