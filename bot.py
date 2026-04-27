@@ -434,7 +434,7 @@ async def usdt_pay(message: types.Message):
         f"💰 Оплата через USDT (TRC-20)\n\n"
         f"📦 {plan[0]} — {usdt}\n\n"
         f"Адрес: <code>{wallet}</code>\n\n"
-        "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_wooft",
+        "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_woof",
         parse_mode="HTML"
     )
 
