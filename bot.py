@@ -1,50 +1,66 @@
-# -----
-# something not good
-# -----
-import os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-def run():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
-
-threading.Thread(target=run, daemon=True).start()
-# -----
-
-
 import os
 import asyncio
+import threading
 import aiohttp
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice
 )
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+
+# -----------------------------
+# KEEP-ALIVE (для хостинга Render и т.п.)
+# Вынесен сюда чтобы не запускался при импорте модуля
+# -----------------------------
+def _start_keepalive():
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+
+        def log_message(self, format, *args):
+            pass  # заглушаем логи keepalive-сервера
+
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
 
 # -----------------------------
 # CONFIG
 # -----------------------------
 TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+
+
+# -----------------------------
+# FSM — состояния пользователя
+# -----------------------------
+class Order(StatesGroup):
+    choosing_country = State()
+    choosing_custom = State()
+    choosing_plan = State()
+    choosing_payment = State()
+
 
 # -----------------------------
 # КУРС ВАЛЮТ
 # -----------------------------
-USD_RATE = {"value": 90.0}
+_usd_rate: float = 90.0
+_usd_rate_lock = asyncio.Lock()
 
 
 async def update_usd_rate():
+    global _usd_rate
     while True:
         try:
             async with aiohttp.ClientSession() as session:
@@ -54,38 +70,36 @@ async def update_usd_rate():
                     data = await resp.json(content_type=None)
                     rate = float(data["Valute"]["USD"]["Value"])
                     if rate > 0:
-                        USD_RATE["value"] = rate
+                        async with _usd_rate_lock:
+                            _usd_rate = rate
         except Exception:
             pass
         await asyncio.sleep(3600)
 
 
+async def get_usd_rate() -> float:
+    async with _usd_rate_lock:
+        return _usd_rate
+
+
 def cents_to_usd(cents: int) -> str:
-    """Центы → строка доллары. 159 → '$1.59'"""
     return f"${cents / 100:.2f}"
 
 
-def cents_to_rub(cents: int) -> int:
-    """Центы → рубли по курсу ЦБ"""
-    rate = USD_RATE.get("value", 90.0)
+async def cents_to_rub(cents: int) -> int:
+    rate = await get_usd_rate()
     return round(cents / 100 * rate)
 
 
 def cents_to_usdt(cents: int) -> str:
-    """Центы → строка USDT. 159 → '1.59 USDT'"""
     return f"{cents / 100:.2f} USDT"
 
 
 # -----------------------------
-# STATE
-# -----------------------------
-USER_STATE: dict[int, dict] = {}
-
-# -----------------------------
 # DATA — обычные страны
-# Тариф: (название, срок, скорость, цена_центы)
+# (название, срок, скорость/покрытие, цена_центы)
 # -----------------------------
-COUNTRIES = {
+COUNTRIES: dict[str, list[tuple]] = {
     "🇹🇷 Турция": [
         ("2 GB", "7 дней", "без ограничений", 159),
         ("6 GB", "15 дней", "без ограничений", 283),
@@ -135,7 +149,7 @@ COUNTRIES = {
 # -----------------------------
 # DATA — бандлы
 # -----------------------------
-BUNDLES = {
+BUNDLES: dict[str, list[tuple]] = {
     "🌏 Трип по Азии": [
         ("5 GB", "15 дней", "Таиланд, Вьетнам, Индонезия", 1490),
         ("10 GB", "30 дней", "Таиланд, Вьетнам, Индонезия, Япония", 2490),
@@ -149,7 +163,7 @@ BUNDLES = {
 }
 
 # -----------------------------
-# DATA — страны по запросу (100 стран)
+# DATA — страны по запросу
 # -----------------------------
 CUSTOM_COUNTRIES = [
     "🇦🇺 Австралия", "🇦🇹 Австрия", "🇦🇿 Азербайджан", "🇦🇱 Албания", "🇩🇿 Алжир",
@@ -174,63 +188,63 @@ CUSTOM_COUNTRIES = [
     "🇸🇪 Швеция", "🇱🇰 Шри-Ланка", "🇪🇨 Эквадор", "🇪🇹 Эфиопия", "🇿🇦 ЮАР",
 ]
 
+
 # -----------------------------
 # KEYBOARDS
 # -----------------------------
 main_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🌍 Купить eSIM")],
-        [KeyboardButton(text="💸 Цены"), KeyboardButton(text="🛠 Поддержка")]
+        [KeyboardButton(text="💸 Цены"), KeyboardButton(text="🛠 Поддержка")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
 payment_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Перевод СБП")],
         [KeyboardButton(text="💰 USDT (сеть TRC20)")],
-        [KeyboardButton(text="⬅️ Назад")]
+        [KeyboardButton(text="⬅️ Назад")],
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
 )
 
 
 def countries_kb() -> ReplyKeyboardMarkup:
-    country_list = list(COUNTRIES.keys())
-    bundle_list = list(BUNDLES.keys())
-    all_items = country_list + bundle_list
-
+    all_items = list(COUNTRIES.keys()) + list(BUNDLES.keys())
     rows = []
     for i in range(0, len(all_items), 2):
-        pair = all_items[i:i+2]
+        pair = all_items[i : i + 2]
         rows.append([KeyboardButton(text=c) for c in pair])
-
     rows.append([KeyboardButton(text="🔍 Страна по запросу")])
     rows.append([KeyboardButton(text="⬅️ Назад")])
-
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup:
+async def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup:
+    """Async потому что нужен курс для отображения цены в рублях."""
     plans = BUNDLES[country_name] if is_bundle else COUNTRIES[country_name]
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"{p[0]} — {cents_to_rub(p[3])} ₽ ({cents_to_usd(p[3])})",
-                callback_data=f"plan_{i}"
-            )]
-            for i, p in enumerate(plans)
-        ]
-    )
+    buttons = []
+    for i, p in enumerate(plans):
+        rub = await cents_to_rub(p[3])
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{p[0]} — {rub} ₽ ({cents_to_usd(p[3])})",
+                callback_data=f"plan_{i}",
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def custom_countries_kb() -> InlineKeyboardMarkup:
+    """Используем enumerate напрямую — индекс всегда точный."""
     rows = []
-    for i in range(0, len(CUSTOM_COUNTRIES), 2):
-        pair = CUSTOM_COUNTRIES[i:i+2]
+    items = list(enumerate(CUSTOM_COUNTRIES))
+    for i in range(0, len(items), 2):
+        pair = items[i : i + 2]
         rows.append([
-            InlineKeyboardButton(text=c, callback_data=f"custom_{i+j}")
-            for j, c in enumerate(pair)
+            InlineKeyboardButton(text=name, callback_data=f"custom_{idx}")
+            for idx, name in pair
         ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -239,41 +253,42 @@ def custom_countries_kb() -> InlineKeyboardMarkup:
 # START
 # -----------------------------
 @dp.message(Command("start"))
-async def start(message: types.Message):
-    USER_STATE.pop(message.chat.id, None)
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     await message.answer(
         "👋 На связи! Это eSIM для поездок 🌍\n\n"
         "🌐 Интернет заграницей\n"
         "⚡ Подключение за пару минут\n"
         "📲 Установил eSIM — и ты онлайн\n\n"
         "👇 Выбери страну и подключи интернет",
-        reply_markup=main_kb
+        reply_markup=main_kb,
     )
 
 
 # -----------------------------
 # BUY MENU
 # -----------------------------
-@dp.message(lambda msg: msg.text == "🌍 Купить eSIM")
-async def buy(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "country"}
+@dp.message(F.text == "🌍 Купить eSIM")
+async def cmd_buy(message: types.Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(Order.choosing_country)
     await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
 
 # -----------------------------
 # СТРАНА ПО ЗАПРОСУ
 # -----------------------------
-@dp.message(lambda msg: msg.text == "🔍 Страна по запросу")
-async def custom_country_menu(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "custom"}
+@dp.message(F.text == "🔍 Страна по запросу")
+async def cmd_custom_country_menu(message: types.Message, state: FSMContext):
+    await state.set_state(Order.choosing_custom)
     await message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
-        reply_markup=custom_countries_kb()
+        reply_markup=custom_countries_kb(),
     )
 
 
-@dp.callback_query(lambda c: c.data.startswith("custom_"))
-async def custom_country_selected(callback: types.CallbackQuery):
+@dp.callback_query(Order.choosing_custom, F.data.startswith("custom_"))
+async def cb_custom_country_selected(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     index = int(callback.data.split("_")[1])
 
@@ -282,66 +297,61 @@ async def custom_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = CUSTOM_COUNTRIES[index]
-    USER_STATE[callback.message.chat.id] = {"step": "country"}
+    await state.set_state(Order.choosing_country)
 
     country_encoded = country_name.replace(" ", "+")
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="✉️ Написать в поддержку",
-                url=f"https://t.me/Who_let_the_dog_out_woof?text=Хочу+eSIM+для+{country_encoded}"
+                url=f"https://t.me/Who_let_the_dog_out_woof?text=Хочу+eSIM+для+{country_encoded}",
             )
         ]]
     )
-
     await callback.message.answer(
         f"🔍 {country_name}\n\n"
         "Этой страны пока нет в каталоге.\n"
         "Нажми кнопку — мы уточним наличие и пришлём цену:",
-        reply_markup=kb
+        reply_markup=kb,
     )
 
 
 # -----------------------------
 # ОБЫЧНАЯ СТРАНА
 # -----------------------------
-@dp.message(lambda msg: msg.text in COUNTRIES)
-async def country(message: types.Message):
-    USER_STATE[message.chat.id] = {
-        "country": message.text,
-        "is_bundle": False,
-        "step": "plan"
-    }
-    await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text))
+@dp.message(Order.choosing_country, F.text.in_(COUNTRIES.keys()))
+async def cmd_country_selected(message: types.Message, state: FSMContext):
+    await state.update_data(country=message.text, is_bundle=False)
+    await state.set_state(Order.choosing_plan)
+    kb = await plans_kb(message.text, is_bundle=False)
+    await message.answer("📦 Выбери тариф:", reply_markup=kb)
 
 
 # -----------------------------
 # БАНДЛ
 # -----------------------------
-@dp.message(lambda msg: msg.text in BUNDLES)
-async def bundle(message: types.Message):
-    USER_STATE[message.chat.id] = {
-        "country": message.text,
-        "is_bundle": True,
-        "step": "plan"
-    }
-    await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text, is_bundle=True))
+@dp.message(Order.choosing_country, F.text.in_(BUNDLES.keys()))
+async def cmd_bundle_selected(message: types.Message, state: FSMContext):
+    await state.update_data(country=message.text, is_bundle=True)
+    await state.set_state(Order.choosing_plan)
+    kb = await plans_kb(message.text, is_bundle=True)
+    await message.answer("📦 Выбери тариф:", reply_markup=kb)
 
 
 # -----------------------------
-# PLAN SELECT
+# ВЫБОР ТАРИФА
 # -----------------------------
-@dp.callback_query(lambda c: c.data.startswith("plan_"))
-async def plan(callback: types.CallbackQuery):
+@dp.callback_query(Order.choosing_plan, F.data.startswith("plan_"))
+async def cb_plan_selected(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
-    user_id = callback.message.chat.id
-    state = USER_STATE.get(user_id, {})
-    country_name = state.get("country")
-    is_bundle = state.get("is_bundle", False)
+    data = await state.get_data()
+    country_name = data.get("country")
+    is_bundle = data.get("is_bundle", False)
 
     if not country_name:
         await callback.message.answer("⚠️ Что-то пошло не так, начни заново", reply_markup=main_kb)
+        await state.clear()
         return
 
     index = int(callback.data.split("_")[1])
@@ -352,10 +362,12 @@ async def plan(callback: types.CallbackQuery):
         return
 
     selected_plan = plans[index]
-    USER_STATE[user_id]["plan"] = selected_plan
-    USER_STATE[user_id]["step"] = "payment"
 
-    rub = cents_to_rub(selected_plan[3])
+    # Сохраняем тариф как список (tuple не сериализуется в FSM storage)
+    await state.update_data(plan=list(selected_plan))
+    await state.set_state(Order.choosing_payment)
+
+    rub = await cents_to_rub(selected_plan[3])
     usd = cents_to_usd(selected_plan[3])
     usdt = cents_to_usdt(selected_plan[3])
 
@@ -365,48 +377,49 @@ async def plan(callback: types.CallbackQuery):
         f"🌍 {selected_plan[2]}\n\n"
         f"💰 {rub} ₽  |  {usd}  |  {usdt}\n\n"
         "Выбери способ оплаты:",
-        reply_markup=payment_kb
+        reply_markup=payment_kb,
     )
 
 
 # -----------------------------
-# НАЗАД
+# КНОПКА НАЗАД
 # -----------------------------
-@dp.message(lambda msg: msg.text == "⬅️ Назад")
-async def back(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
-    step = state.get("step")
+@dp.message(F.text == "⬅️ Назад")
+async def cmd_back(message: types.Message, state: FSMContext):
+    current = await state.get_state()
 
-    if step == "payment":
-        country_name = state.get("country")
-        is_bundle = state.get("is_bundle", False)
-        USER_STATE[message.chat.id]["step"] = "plan"
-        USER_STATE[message.chat.id].pop("plan", None)
-        await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name, is_bundle=is_bundle))
+    if current == Order.choosing_payment:
+        data = await state.get_data()
+        country_name = data.get("country")
+        is_bundle = data.get("is_bundle", False)
+        await state.update_data(plan=None)
+        await state.set_state(Order.choosing_plan)
+        kb = await plans_kb(country_name, is_bundle=is_bundle)
+        await message.answer("📦 Выбери тариф:", reply_markup=kb)
 
-    elif step in ("plan", "custom"):
-        USER_STATE[message.chat.id] = {"step": "country"}
+    elif current in (Order.choosing_plan, Order.choosing_custom):
+        await state.set_state(Order.choosing_country)
         await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
     else:
-        USER_STATE.pop(message.chat.id, None)
+        await state.clear()
         await message.answer("Главное меню", reply_markup=main_kb)
 
 
 # -----------------------------
 # ОПЛАТА: СБП
 # -----------------------------
-@dp.message(lambda msg: msg.text == "💳 Перевод СБП")
-async def sbp(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
-    plan = state.get("plan")
+@dp.message(Order.choosing_payment, F.text == "💳 Перевод СБП")
+async def cmd_sbp(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    plan = data.get("plan")
 
     if not plan:
-        await message.answer("⚠️ Сначала выбери тариф")
+        await message.answer("⚠️ Сначала выбери тариф", reply_markup=main_kb)
+        await state.clear()
         return
 
-    rub = cents_to_rub(plan[3])
-
+    rub = await cents_to_rub(plan[3])
     await message.answer(
         f"💳 Оплата через СБП\n\n"
         f"📦 {plan[0]} — {rub} ₽\n\n"
@@ -418,13 +431,14 @@ async def sbp(message: types.Message):
 # -----------------------------
 # ОПЛАТА: USDT
 # -----------------------------
-@dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
-async def usdt_pay(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
-    plan = state.get("plan")
+@dp.message(Order.choosing_payment, F.text == "💰 USDT (сеть TRC20)")
+async def cmd_usdt(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    plan = data.get("plan")
 
     if not plan:
-        await message.answer("⚠️ Сначала выбери тариф")
+        await message.answer("⚠️ Сначала выбери тариф", reply_markup=main_kb)
+        await state.clear()
         return
 
     usdt = cents_to_usdt(plan[3])
@@ -435,49 +449,43 @@ async def usdt_pay(message: types.Message):
         f"📦 {plan[0]} — {usdt}\n\n"
         f"Адрес: <code>{wallet}</code>\n\n"
         "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_woof",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
-# -----------------------------
-# ПРОЧЕЕ
-# -----------------------------
-@dp.message(lambda msg: msg.text == "💸 Цены")
-async def prices(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "country"}
 
-    # Инлайн-кнопки для обычных стран
-    country_rows = []
+# -----------------------------
+# МЕНЮ ЦЕН
+# -----------------------------
+@dp.message(F.text == "💸 Цены")
+async def cmd_prices(message: types.Message, state: FSMContext):
+    await state.set_state(Order.choosing_country)
+
+    rows = []
     country_list = list(COUNTRIES.keys())
     for i in range(0, len(country_list), 2):
-        pair = country_list[i:i+2]
-        country_rows.append([
-            InlineKeyboardButton(text=c, callback_data=f"country_{i+j}")
-            for j, c in enumerate(pair)
+        pair = list(enumerate(country_list))[i : i + 2]
+        rows.append([
+            InlineKeyboardButton(text=name, callback_data=f"prices_country_{idx}")
+            for idx, name in pair
         ])
 
-    # Инлайн-кнопки для бандлов
     bundle_list = list(BUNDLES.keys())
     for i in range(0, len(bundle_list), 2):
-        pair = bundle_list[i:i+2]
-        country_rows.append([
-            InlineKeyboardButton(text=b, callback_data=f"bundle_{i+j}")
-            for j, b in enumerate(pair)
+        pair = list(enumerate(bundle_list))[i : i + 2]
+        rows.append([
+            InlineKeyboardButton(text=name, callback_data=f"prices_bundle_{idx}")
+            for idx, name in pair
         ])
 
-    # Кнопка запроса
-    country_rows.append([
-        InlineKeyboardButton(text="🔍 Страна по запросу", callback_data="goto_custom")
-    ])
-
-    kb = InlineKeyboardMarkup(inline_keyboard=country_rows)
-
+    rows.append([InlineKeyboardButton(text="🔍 Страна по запросу", callback_data="goto_custom")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await message.answer("🌍 Выбери страну чтобы посмотреть тарифы и купить:", reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data.startswith("country_"))
-async def prices_country_selected(callback: types.CallbackQuery):
+@dp.callback_query(Order.choosing_country, F.data.startswith("prices_country_"))
+async def cb_prices_country(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
-    index = int(callback.data.split("_")[1])
+    index = int(callback.data.split("_")[2])
     country_list = list(COUNTRIES.keys())
 
     if index >= len(country_list):
@@ -485,18 +493,16 @@ async def prices_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = country_list[index]
-    USER_STATE[callback.message.chat.id] = {
-        "country": country_name,
-        "is_bundle": False,
-        "step": "plan"
-    }
-    await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name))
+    await state.update_data(country=country_name, is_bundle=False)
+    await state.set_state(Order.choosing_plan)
+    kb = await plans_kb(country_name, is_bundle=False)
+    await callback.message.answer("📦 Выбери тариф:", reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data.startswith("bundle_"))
-async def prices_bundle_selected(callback: types.CallbackQuery):
+@dp.callback_query(Order.choosing_country, F.data.startswith("prices_bundle_"))
+async def cb_prices_bundle(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
-    index = int(callback.data.split("_")[1])
+    index = int(callback.data.split("_")[2])
     bundle_list = list(BUNDLES.keys())
 
     if index >= len(bundle_list):
@@ -504,38 +510,48 @@ async def prices_bundle_selected(callback: types.CallbackQuery):
         return
 
     bundle_name = bundle_list[index]
-    USER_STATE[callback.message.chat.id] = {
-        "country": bundle_name,
-        "is_bundle": True,
-        "step": "plan"
-    }
-    await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(bundle_name, is_bundle=True))
+    await state.update_data(country=bundle_name, is_bundle=True)
+    await state.set_state(Order.choosing_plan)
+    kb = await plans_kb(bundle_name, is_bundle=True)
+    await callback.message.answer("📦 Выбери тариф:", reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data == "goto_custom")
-async def prices_goto_custom(callback: types.CallbackQuery):
+@dp.callback_query(Order.choosing_country, F.data == "goto_custom")
+async def cb_goto_custom(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
-    USER_STATE[callback.message.chat.id] = {"step": "custom"}
+    await state.set_state(Order.choosing_custom)
     await callback.message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
-        reply_markup=custom_countries_kb()
+        reply_markup=custom_countries_kb(),
     )
 
 
-@dp.message(lambda msg: msg.text == "🛠 Поддержка")
-async def support(message: types.Message):
+# -----------------------------
+# ПОДДЕРЖКА
+# -----------------------------
+@dp.message(F.text == "🛠 Поддержка")
+async def cmd_support(message: types.Message):
     await message.answer(
         "🛠 Поддержка: @Who_let_the_dog_out_woof\n"
-        "Время ответа: обычно до 30 минут в рабочее время,\n" 
-         "но скорее всего это будет гораздо быстрее\n"
+        "Время ответа: обычно до 30 минут в рабочее время,\n"
+        "но скорее всего это будет гораздо быстрее\n"
         "Рабочее время по МСК: 10.00-18.00"
     )
+
+
+# -----------------------------
+# FALLBACK — неизвестные сообщения
+# -----------------------------
+@dp.message()
+async def cmd_fallback(message: types.Message):
+    await message.answer("Не понял. Используй кнопки 👇", reply_markup=main_kb)
 
 
 # -----------------------------
 # RUN
 # -----------------------------
 async def main():
+    _start_keepalive()
     asyncio.create_task(update_usd_rate())
     await dp.start_polling(bot)
 
