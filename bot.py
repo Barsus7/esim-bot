@@ -577,11 +577,19 @@ async def prices_goto_custom(callback: types.CallbackQuery):
 
 @dp.message(lambda msg: msg.text == "🛠 Поддержка")
 async def support(message: types.Message):
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="✉️ Написать в поддержку",
+                url="https://t.me/Who_let_the_dog_out_woof?text=Хочу+купить+eSIM"
+            )
+        ]]
+    )
+
     await message.answer(
-        "🛠 Поддержка: @Who_let_the_dog_out_woof\n"
-        "Время ответа: обычно до 30 минут в рабочее время,\n"
-        "но скорее всего это будет гораздо быстрее\n"
-        "Рабочее время по МСК: 10.00-18.00"
+        "🛠 Поддержка\n\n"
+        "Нажми кнопку ниже, чтобы написать 👇",
+        reply_markup=kb
     )
 
 
