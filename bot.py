@@ -74,6 +74,40 @@ async def check_invoice(invoice_id: int):
         async with session.get(url, headers=headers, params=params) as resp:
             return await resp.json()
 
+
+async def wait_for_payment(user_id: int, invoice_id: int):
+    for _ in range(60):  # ~5 минут
+        await asyncio.sleep(5)
+
+        result = await check_invoice(invoice_id)
+
+        if not result.get("ok"):
+            print("CHECK ERROR:", result)
+            continue
+
+        invoices = result["result"]["items"]
+        if not invoices:
+            continue
+
+        status = invoices[0]["status"]
+        print("STATUS:", status)
+
+        if status == "paid":
+            await bot.send_message(
+                user_id,
+                "✅ Оплата получена!\n\n📦 Готовим твою eSIM..."
+            )
+            USER_STATE[user_id].pop("invoice_id", None)
+            return
+
+        if status == "expired":
+            await bot.send_message(
+                user_id,
+                "⌛ Счёт истёк. Создай новый при необходимости"
+            )
+            USER_STATE[user_id].pop("invoice_id", None)
+            return
+            
 # -----------------------------
 # КУРС ВАЛЮТ
 # -----------------------------
@@ -477,6 +511,10 @@ async def usdt_pay(message: types.Message):
     invoice_data = invoice["result"]
 
     USER_STATE[user_id]["invoice_id"] = invoice_data["invoice_id"]
+
+    asyncio.create_task(
+    wait_for_payment(user_id, invoice_data["invoice_id"])
+    )
 
     pay_url = invoice_data["pay_url"]
 
