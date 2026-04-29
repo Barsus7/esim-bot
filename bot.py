@@ -454,16 +454,21 @@ async def sbp(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
 async def usdt_pay(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
-    plan = state.get("plan")
+    user_id = message.chat.id
+
+    if user_id not in USER_STATE:
+        await message.answer("⚠️ Сначала выбери тариф")
+        return
+
+    plan = USER_STATE[user_id].get("plan")
 
     if not plan:
-        await message.answer("⚠️ Сначала выбери тариф")
+        await message.answer("⚠️ Тариф не найден, выбери заново")
         return
 
     amount_usdt = round(plan[3] / 100, 2)
 
-    invoice = await create_invoice(amount_usdt, message.chat.id)
+    invoice = await create_invoice(amount_usdt, user_id)
 
     if not invoice.get("ok"):
         await message.answer("❌ Ошибка создания оплаты, попробуй позже")
@@ -471,7 +476,7 @@ async def usdt_pay(message: types.Message):
 
     invoice_data = invoice["result"]
 
-    USER_STATE[message.chat.id]["invoice_id"] = invoice_data["invoice_id"]
+    USER_STATE[user_id]["invoice_id"] = invoice_data["invoice_id"]
 
     pay_url = invoice_data["pay_url"]
 
