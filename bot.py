@@ -34,7 +34,6 @@ from aiogram.filters import Command
 # -----------------------------
 # CONFIG
 # -----------------------------
-ADMIN_ID = 123456789
 TOKEN = os.getenv("BOT_TOKEN")
 CRYPTO_API_TOKEN = os.getenv("CRYPTO_API_TOKEN")
 bot = Bot(token=TOKEN)
@@ -94,32 +93,11 @@ async def wait_for_payment(user_id: int, invoice_id: int):
         print("STATUS:", status)
 
         if status == "paid":
-            state = USER_STATE.get(user_id, {})
-            country = state.get("country", "не указана")
-            plan = state.get("plan")
-
-            plan_text = "не указан"
-            if plan:
-                plan_text = f"{plan[0]} | {plan[1]}"
-
-            # сообщение пользователю
             await bot.send_message(
                 user_id,
-                "✅ Оплата получена!\n\n📦 Передаём заказ в обработку..."
+                "✅ Оплата получена!\n\n📦 Готовим твою eSIM..."
             )
-
-            # сообщение тебе (в поддержку)
-            await bot.send_message(
-                ADMIN_ID,
-                f"💰 НОВАЯ ОПЛАТА\n\n"
-                f"👤 user_id: {user_id}\n"
-                f"🌍 Страна: {country}\n"
-                f"📦 Тариф: {plan_text}"
-            )
-
-            if user_id in USER_STATE:
-                USER_STATE[user_id].pop("invoice_id", None)
-
+            USER_STATE[user_id].pop("invoice_id", None)
             return
 
         if status == "expired":
@@ -127,10 +105,7 @@ async def wait_for_payment(user_id: int, invoice_id: int):
                 user_id,
                 "⌛ Счёт истёк. Создай новый при необходимости"
             )
-
-            if user_id in USER_STATE:
-                USER_STATE[user_id].pop("invoice_id", None)
-
+            USER_STATE[user_id].pop("invoice_id", None)
             return
             
 # -----------------------------
