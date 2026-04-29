@@ -581,7 +581,7 @@ async def support(message: types.Message):
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="✉️ Написать в поддержку",
-                url="https://t.me/Who_let_the_dog_out_woof?text=Хочу+купить+eSIM"
+                url="https://t.me/Who_let_the_dog_out_woof"
             )
         ]]
     )
