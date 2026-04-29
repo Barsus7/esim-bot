@@ -97,18 +97,15 @@ async def update_usd_rate():
 
 
 def cents_to_usd(cents: int) -> str:
-    """Центы → строка доллары. 159 → '$1.59'"""
     return f"${cents / 100:.2f}"
 
 
 def cents_to_rub(cents: int) -> int:
-    """Центы → рубли по курсу ЦБ"""
     rate = USD_RATE.get("value", 90.0)
     return round(cents / 100 * rate)
 
 
 def cents_to_usdt(cents: int) -> str:
-    """Центы → строка USDT. 159 → '1.59 USDT'"""
     return f"{cents / 100:.2f} USDT"
 
 
@@ -119,7 +116,6 @@ USER_STATE: dict[int, dict] = {}
 
 # -----------------------------
 # DATA — обычные страны
-# Тариф: (название, срок, скорость, цена_центы)
 # -----------------------------
 COUNTRIES = {
     "🇹🇷 Турция": [
@@ -185,7 +181,7 @@ BUNDLES = {
 }
 
 # -----------------------------
-# DATA — страны по запросу (100 стран)
+# DATA — страны по запросу
 # -----------------------------
 CUSTOM_COUNTRIES = [
     "🇦🇺 Австралия", "🇦🇹 Австрия", "🇦🇿 Азербайджан", "🇦🇱 Албания", "🇩🇿 Алжир",
@@ -292,7 +288,8 @@ async def start(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "🌍 Купить eSIM")
 async def buy(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "country"}
+    USER_STATE.setdefault(message.chat.id, {})
+    USER_STATE[message.chat.id]["step"] = "country"
     await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
 
@@ -301,7 +298,8 @@ async def buy(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "🔍 Страна по запросу")
 async def custom_country_menu(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "custom"}
+    USER_STATE.setdefault(message.chat.id, {})
+    USER_STATE[message.chat.id]["step"] = "custom"
     await message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
         reply_markup=custom_countries_kb()
@@ -318,7 +316,8 @@ async def custom_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = CUSTOM_COUNTRIES[index]
-    USER_STATE[callback.message.chat.id] = {"step": "country"}
+    USER_STATE.setdefault(callback.message.chat.id, {})
+    USER_STATE[callback.message.chat.id]["step"] = "country"
 
     country_encoded = country_name.replace(" ", "+")
     kb = InlineKeyboardMarkup(
@@ -343,11 +342,10 @@ async def custom_country_selected(callback: types.CallbackQuery):
 # -----------------------------
 @dp.message(lambda msg: msg.text in COUNTRIES)
 async def country(message: types.Message):
-    USER_STATE[message.chat.id] = {
-        "country": message.text,
-        "is_bundle": False,
-        "step": "plan"
-    }
+    USER_STATE.setdefault(message.chat.id, {})
+    USER_STATE[message.chat.id]["country"] = message.text
+    USER_STATE[message.chat.id]["is_bundle"] = False
+    USER_STATE[message.chat.id]["step"] = "plan"
     await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text))
 
 
@@ -356,11 +354,10 @@ async def country(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text in BUNDLES)
 async def bundle(message: types.Message):
-    USER_STATE[message.chat.id] = {
-        "country": message.text,
-        "is_bundle": True,
-        "step": "plan"
-    }
+    USER_STATE.setdefault(message.chat.id, {})
+    USER_STATE[message.chat.id]["country"] = message.text
+    USER_STATE[message.chat.id]["is_bundle"] = True
+    USER_STATE[message.chat.id]["step"] = "plan"
     await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text, is_bundle=True))
 
 
@@ -421,7 +418,8 @@ async def back(message: types.Message):
         await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name, is_bundle=is_bundle))
 
     elif step in ("plan", "custom"):
-        USER_STATE[message.chat.id] = {"step": "country"}
+        USER_STATE.setdefault(message.chat.id, {})
+        USER_STATE[message.chat.id]["step"] = "country"
         await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
     else:
@@ -463,10 +461,8 @@ async def usdt_pay(message: types.Message):
         await message.answer("⚠️ Сначала выбери тариф")
         return
 
-    # считаем сумму
     amount_usdt = round(plan[3] / 100, 2)
 
-    # создаём инвойс
     invoice = await create_invoice(amount_usdt, message.chat.id)
 
     if not invoice.get("ok"):
@@ -475,7 +471,6 @@ async def usdt_pay(message: types.Message):
 
     invoice_data = invoice["result"]
 
-    # сохраняем invoice_id
     USER_STATE[message.chat.id]["invoice_id"] = invoice_data["invoice_id"]
 
     pay_url = invoice_data["pay_url"]
@@ -493,14 +488,15 @@ async def usdt_pay(message: types.Message):
         reply_markup=kb
     )
 
+
 # -----------------------------
 # ПРОЧЕЕ
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💸 Цены")
 async def prices(message: types.Message):
-    USER_STATE[message.chat.id] = {"step": "country"}
+    USER_STATE.setdefault(message.chat.id, {})
+    USER_STATE[message.chat.id]["step"] = "country"
 
-    # Инлайн-кнопки для обычных стран
     country_rows = []
     country_list = list(COUNTRIES.keys())
     for i in range(0, len(country_list), 2):
@@ -510,7 +506,6 @@ async def prices(message: types.Message):
             for j, c in enumerate(pair)
         ])
 
-    # Инлайн-кнопки для бандлов
     bundle_list = list(BUNDLES.keys())
     for i in range(0, len(bundle_list), 2):
         pair = bundle_list[i:i+2]
@@ -519,7 +514,6 @@ async def prices(message: types.Message):
             for j, b in enumerate(pair)
         ])
 
-    # Кнопка запроса
     country_rows.append([
         InlineKeyboardButton(text="🔍 Страна по запросу", callback_data="goto_custom")
     ])
@@ -540,11 +534,10 @@ async def prices_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = country_list[index]
-    USER_STATE[callback.message.chat.id] = {
-        "country": country_name,
-        "is_bundle": False,
-        "step": "plan"
-    }
+    USER_STATE.setdefault(callback.message.chat.id, {})
+    USER_STATE[callback.message.chat.id]["country"] = country_name
+    USER_STATE[callback.message.chat.id]["is_bundle"] = False
+    USER_STATE[callback.message.chat.id]["step"] = "plan"
     await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name))
 
 
@@ -559,18 +552,18 @@ async def prices_bundle_selected(callback: types.CallbackQuery):
         return
 
     bundle_name = bundle_list[index]
-    USER_STATE[callback.message.chat.id] = {
-        "country": bundle_name,
-        "is_bundle": True,
-        "step": "plan"
-    }
+    USER_STATE.setdefault(callback.message.chat.id, {})
+    USER_STATE[callback.message.chat.id]["country"] = bundle_name
+    USER_STATE[callback.message.chat.id]["is_bundle"] = True
+    USER_STATE[callback.message.chat.id]["step"] = "plan"
     await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(bundle_name, is_bundle=True))
 
 
 @dp.callback_query(lambda c: c.data == "goto_custom")
 async def prices_goto_custom(callback: types.CallbackQuery):
     await callback.answer()
-    USER_STATE[callback.message.chat.id] = {"step": "custom"}
+    USER_STATE.setdefault(callback.message.chat.id, {})
+    USER_STATE[callback.message.chat.id]["step"] = "custom"
     await callback.message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
         reply_markup=custom_countries_kb()
@@ -581,8 +574,8 @@ async def prices_goto_custom(callback: types.CallbackQuery):
 async def support(message: types.Message):
     await message.answer(
         "🛠 Поддержка: @Who_let_the_dog_out_woof\n"
-        "Время ответа: обычно до 30 минут в рабочее время,\n" 
-         "но скорее всего это будет гораздо быстрее\n"
+        "Время ответа: обычно до 30 минут в рабочее время,\n"
+        "но скорее всего это будет гораздо быстрее\n"
         "Рабочее время по МСК: 10.00-18.00"
     )
 
