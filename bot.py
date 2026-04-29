@@ -1,5 +1,5 @@
 # -----
-# something not GOOD
+# something not good
 # -----
 import os
 import threading
