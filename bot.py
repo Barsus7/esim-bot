@@ -35,8 +35,44 @@ from aiogram.filters import Command
 # CONFIG
 # -----------------------------
 TOKEN = os.getenv("BOT_TOKEN")
+CRYPTO_API_TOKEN = os.getenv("CRYPTO_API_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# -----------------------------
+# CRYPTO BOT API
+# -----------------------------
+CRYPTO_API_URL = "https://pay.crypt.bot/api"
+
+
+async def create_invoice(amount_usdt: float, user_id: int):
+    url = f"{CRYPTO_API_URL}/createInvoice"
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTO_API_TOKEN
+    }
+    data = {
+        "asset": "USDT",
+        "amount": amount_usdt,
+        "description": f"eSIM для user {user_id}"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as resp:
+            return await resp.json()
+
+
+async def check_invoice(invoice_id: int):
+    url = f"{CRYPTO_API_URL}/getInvoices"
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTO_API_TOKEN
+    }
+    params = {
+        "invoice_ids": invoice_id
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, params=params) as resp:
+            return await resp.json()
 
 # -----------------------------
 # КУРС ВАЛЮТ
@@ -427,15 +463,34 @@ async def usdt_pay(message: types.Message):
         await message.answer("⚠️ Сначала выбери тариф")
         return
 
-    usdt = cents_to_usdt(plan[3])
-    wallet = "TSP8CN1WjbKeukmToJYpXD5PDSBYFNDEa1"
+    # считаем сумму
+    amount_usdt = round(plan[3] / 100, 2)
+
+    # создаём инвойс
+    invoice = await create_invoice(amount_usdt, message.chat.id)
+
+    if not invoice.get("ok"):
+        await message.answer("❌ Ошибка создания оплаты, попробуй позже")
+        return
+
+    invoice_data = invoice["result"]
+
+    # сохраняем invoice_id
+    USER_STATE[message.chat.id]["invoice_id"] = invoice_data["invoice_id"]
+
+    pay_url = invoice_data["pay_url"]
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="💰 Оплатить USDT", url=pay_url)
+        ]]
+    )
 
     await message.answer(
-        f"💰 Оплата через USDT (TRC-20)\n\n"
-        f"📦 {plan[0]} — {usdt}\n\n"
-        f"Адрес: <code>{wallet}</code>\n\n"
-        "После оплаты отправь хэш транзакции: @Who_let_the_dog_out_woof",
-        parse_mode="HTML"
+        f"💰 Оплата через USDT\n\n"
+        f"Сумма: {amount_usdt} USDT\n\n"
+        "Нажми кнопку ниже чтобы оплатить 👇",
+        reply_markup=kb
     )
 
 # -----------------------------
