@@ -50,6 +50,8 @@ threading.Thread(target=start_health_check_server, daemon=True).start()
 # -----------------------------
 # CONFIG
 # -----------------------------
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 TOKEN = os.getenv("BOT_TOKEN")
 CRYPTO_API_TOKEN = os.getenv("CRYPTO_API_TOKEN")
 bot = Bot(token=TOKEN)
@@ -374,11 +376,16 @@ def custom_countries_kb() -> InlineKeyboardMarkup:
 # -----------------------------
 # START
 # -----------------------------
+from supabase_client import supabase
 @dp.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.chat.id
     update_user_timestamp(user_id)
     USER_STATE.pop(user_id, None)
+    supabase.table("users").upsert({
+    "user_id": message.chat.id,
+    "username": message.from_user.username
+}).execute()
     
     await message.answer(
         "👋 На связи! Это eSIM для поездок 🌍\n\n"
