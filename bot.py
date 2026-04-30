@@ -1,6 +1,7 @@
 import os
 import threading
 import logging
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
@@ -32,7 +33,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
     
     def log_message(self, format, *args):
-        # Отключаем логирование каждого запроса
         pass
 
 
@@ -56,6 +56,35 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # -----------------------------
+# STATE с автоочисткой
+# -----------------------------
+USER_STATE: dict[int, dict] = {}
+USER_TIMESTAMPS: dict[int, float] = {}
+
+
+async def cleanup_old_states():
+    """Очищает состояния пользователей старше 1 часа"""
+    while True:
+        try:
+            await asyncio.sleep(300)  # Проверяем каждые 5 минут
+            now = time.time()
+            expired = [uid for uid, ts in USER_TIMESTAMPS.items() if now - ts > 3600]
+            
+            if expired:
+                for uid in expired:
+                    USER_STATE.pop(uid, None)
+                    USER_TIMESTAMPS.pop(uid, None)
+                logger.info(f"Cleaned up {len(expired)} old user states")
+        except Exception as e:
+            logger.error(f"Error in cleanup_old_states: {e}")
+
+
+def update_user_timestamp(user_id: int):
+    """Обновляет время последней активности пользователя"""
+    USER_TIMESTAMPS[user_id] = time.time()
+
+
+# -----------------------------
 # CRYPTO BOT API
 # -----------------------------
 CRYPTO_API_URL = "https://pay.crypt.bot/api"
@@ -72,9 +101,13 @@ async def create_invoice(amount_usdt: float, user_id: int):
         "description": f"eSIM для user {user_id}"
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=data) as resp:
-            return await resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data) as resp:
+                return await resp.json()
+    except Exception as e:
+        logger.error(f"Failed to create invoice: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 async def check_invoice(invoice_id: int):
@@ -86,44 +119,56 @@ async def check_invoice(invoice_id: int):
         "invoice_ids": str(invoice_id)
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers, params=params) as resp:
-            return await resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params=params) as resp:
+                return await resp.json()
+    except Exception as e:
+        logger.error(f"Failed to check invoice: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 async def wait_for_payment(user_id: int, invoice_id: int):
-    for _ in range(60):  # ~5 минут
+    for attempt in range(60):  # ~5 минут
         await asyncio.sleep(5)
 
         result = await check_invoice(invoice_id)
 
         if not result.get("ok"):
-            print("CHECK ERROR:", result)
+            logger.warning(f"CHECK ERROR for invoice {invoice_id}: {result}")
             continue
 
-        invoices = result["result"]["items"]
+        invoices = result.get("result", {}).get("items", [])
         if not invoices:
             continue
 
-        status = invoices[0]["status"]
-        print("STATUS:", status)
+        status = invoices[0].get("status")
+        logger.info(f"Invoice {invoice_id} status: {status}")
 
         if status == "paid":
-            await bot.send_message(
-                user_id,
-                "✅ Оплата получена!\n\n📦 Готовим твою eSIM..."
-            )
-            USER_STATE[user_id].pop("invoice_id", None)
+            try:
+                await bot.send_message(
+                    user_id,
+                    "✅ Оплата получена!\n\n📦 Готовим твою eSIM..."
+                )
+            except Exception as e:
+                logger.error(f"Failed to send payment notification: {e}")
+            
+            USER_STATE.get(user_id, {}).pop("invoice_id", None)
             return
 
         if status == "expired":
-            await bot.send_message(
-                user_id,
-                "⌛ Счёт истёк. Создай новый при необходимости"
-            )
-            USER_STATE[user_id].pop("invoice_id", None)
-            return
+            try:
+                await bot.send_message(
+                    user_id,
+                    "⌛ Счёт истёк. Создай новый при необходимости"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send expiry notification: {e}")
             
+            USER_STATE.get(user_id, {}).pop("invoice_id", None)
+            return
+
 # -----------------------------
 # КУРС ВАЛЮТ
 # -----------------------------
@@ -141,8 +186,10 @@ async def update_usd_rate():
                     rate = float(data["Valute"]["USD"]["Value"])
                     if rate > 0:
                         USD_RATE["value"] = rate
-        except Exception:
-            pass
+                        logger.info(f"USD rate updated: {rate}")
+        except Exception as e:
+            logger.warning(f"Failed to update USD rate: {e}")
+        
         await asyncio.sleep(3600)
 
 
@@ -158,11 +205,6 @@ def cents_to_rub(cents: int) -> int:
 def cents_to_usdt(cents: int) -> str:
     return f"{cents / 100:.2f} USDT"
 
-
-# -----------------------------
-# STATE
-# -----------------------------
-USER_STATE: dict[int, dict] = {}
 
 # -----------------------------
 # DATA — обычные страны
@@ -322,7 +364,10 @@ def custom_countries_kb() -> InlineKeyboardMarkup:
 # -----------------------------
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    USER_STATE.pop(message.chat.id, None)
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    USER_STATE.pop(user_id, None)
+    
     await message.answer(
         "👋 На связи! Это eSIM для поездок 🌍\n\n"
         "🌐 Интернет заграницей\n"
@@ -338,8 +383,11 @@ async def start(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "🌍 Купить eSIM")
 async def buy(message: types.Message):
-    USER_STATE.setdefault(message.chat.id, {})
-    USER_STATE[message.chat.id]["step"] = "country"
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["step"] = "country"
     await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
 
@@ -348,8 +396,11 @@ async def buy(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "🔍 Страна по запросу")
 async def custom_country_menu(message: types.Message):
-    USER_STATE.setdefault(message.chat.id, {})
-    USER_STATE[message.chat.id]["step"] = "custom"
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["step"] = "custom"
     await message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
         reply_markup=custom_countries_kb()
@@ -358,6 +409,9 @@ async def custom_country_menu(message: types.Message):
 
 @dp.callback_query(lambda c: c.data.startswith("custom_"))
 async def custom_country_selected(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
     await callback.answer()
     index = int(callback.data.split("_")[1])
 
@@ -366,8 +420,8 @@ async def custom_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = CUSTOM_COUNTRIES[index]
-    USER_STATE.setdefault(callback.message.chat.id, {})
-    USER_STATE[callback.message.chat.id]["step"] = "country"
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["step"] = "country"
 
     country_encoded = country_name.replace(" ", "+")
     kb = InlineKeyboardMarkup(
@@ -392,10 +446,13 @@ async def custom_country_selected(callback: types.CallbackQuery):
 # -----------------------------
 @dp.message(lambda msg: msg.text in COUNTRIES)
 async def country(message: types.Message):
-    USER_STATE.setdefault(message.chat.id, {})
-    USER_STATE[message.chat.id]["country"] = message.text
-    USER_STATE[message.chat.id]["is_bundle"] = False
-    USER_STATE[message.chat.id]["step"] = "plan"
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["country"] = message.text
+    USER_STATE[user_id]["is_bundle"] = False
+    USER_STATE[user_id]["step"] = "plan"
     await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text))
 
 
@@ -404,10 +461,13 @@ async def country(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text in BUNDLES)
 async def bundle(message: types.Message):
-    USER_STATE.setdefault(message.chat.id, {})
-    USER_STATE[message.chat.id]["country"] = message.text
-    USER_STATE[message.chat.id]["is_bundle"] = True
-    USER_STATE[message.chat.id]["step"] = "plan"
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["country"] = message.text
+    USER_STATE[user_id]["is_bundle"] = True
+    USER_STATE[user_id]["step"] = "plan"
     await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text, is_bundle=True))
 
 
@@ -416,9 +476,11 @@ async def bundle(message: types.Message):
 # -----------------------------
 @dp.callback_query(lambda c: c.data.startswith("plan_"))
 async def plan(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
     await callback.answer()
 
-    user_id = callback.message.chat.id
     state = USER_STATE.get(user_id, {})
     country_name = state.get("country")
     is_bundle = state.get("is_bundle", False)
@@ -457,23 +519,27 @@ async def plan(callback: types.CallbackQuery):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "⬅️ Назад")
 async def back(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    state = USER_STATE.get(user_id, {})
     step = state.get("step")
 
     if step == "payment":
         country_name = state.get("country")
         is_bundle = state.get("is_bundle", False)
-        USER_STATE[message.chat.id]["step"] = "plan"
-        USER_STATE[message.chat.id].pop("plan", None)
+        USER_STATE[user_id]["step"] = "plan"
+        USER_STATE[user_id].pop("plan", None)
         await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name, is_bundle=is_bundle))
 
     elif step in ("plan", "custom"):
-        USER_STATE.setdefault(message.chat.id, {})
-        USER_STATE[message.chat.id]["step"] = "country"
+        USER_STATE.setdefault(user_id, {})
+        USER_STATE[user_id]["step"] = "country"
         await message.answer("🌍 Выбери страну или бандл:", reply_markup=countries_kb())
 
     else:
-        USER_STATE.pop(message.chat.id, None)
+        USER_STATE.pop(user_id, None)
+        USER_TIMESTAMPS.pop(user_id, None)
         await message.answer("Главное меню", reply_markup=main_kb)
 
 
@@ -482,7 +548,10 @@ async def back(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💳 Перевод СБП")
 async def sbp(message: types.Message):
-    state = USER_STATE.get(message.chat.id, {})
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    state = USER_STATE.get(user_id, {})
     plan = state.get("plan")
 
     if not plan:
@@ -505,6 +574,7 @@ async def sbp(message: types.Message):
 @dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
 async def usdt_pay(message: types.Message):
     user_id = message.chat.id
+    update_user_timestamp(user_id)
 
     if user_id not in USER_STATE:
         await message.answer("⚠️ Сначала выбери тариф")
@@ -553,11 +623,16 @@ async def usdt_pay(message: types.Message):
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💸 Цены")
 async def prices(message: types.Message):
-    USER_STATE.setdefault(message.chat.id, {})
-    USER_STATE[message.chat.id]["step"] = "country"
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["step"] = "country"
 
     country_rows = []
     country_list = list(COUNTRIES.keys())
+    
+    # ИСПРАВЛЕНО: Правильная индексация для стран
     for i in range(0, len(country_list), 2):
         pair = country_list[i:i+2]
         country_rows.append([
@@ -566,6 +641,8 @@ async def prices(message: types.Message):
         ])
 
     bundle_list = list(BUNDLES.keys())
+    
+    # ИСПРАВЛЕНО: Правильная индексация для бандлов
     for i in range(0, len(bundle_list), 2):
         pair = bundle_list[i:i+2]
         country_rows.append([
@@ -584,6 +661,9 @@ async def prices(message: types.Message):
 
 @dp.callback_query(lambda c: c.data.startswith("country_"))
 async def prices_country_selected(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
     await callback.answer()
     index = int(callback.data.split("_")[1])
     country_list = list(COUNTRIES.keys())
@@ -593,15 +673,18 @@ async def prices_country_selected(callback: types.CallbackQuery):
         return
 
     country_name = country_list[index]
-    USER_STATE.setdefault(callback.message.chat.id, {})
-    USER_STATE[callback.message.chat.id]["country"] = country_name
-    USER_STATE[callback.message.chat.id]["is_bundle"] = False
-    USER_STATE[callback.message.chat.id]["step"] = "plan"
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["country"] = country_name
+    USER_STATE[user_id]["is_bundle"] = False
+    USER_STATE[user_id]["step"] = "plan"
     await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(country_name))
 
 
 @dp.callback_query(lambda c: c.data.startswith("bundle_"))
 async def prices_bundle_selected(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
     await callback.answer()
     index = int(callback.data.split("_")[1])
     bundle_list = list(BUNDLES.keys())
@@ -611,18 +694,21 @@ async def prices_bundle_selected(callback: types.CallbackQuery):
         return
 
     bundle_name = bundle_list[index]
-    USER_STATE.setdefault(callback.message.chat.id, {})
-    USER_STATE[callback.message.chat.id]["country"] = bundle_name
-    USER_STATE[callback.message.chat.id]["is_bundle"] = True
-    USER_STATE[callback.message.chat.id]["step"] = "plan"
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["country"] = bundle_name
+    USER_STATE[user_id]["is_bundle"] = True
+    USER_STATE[user_id]["step"] = "plan"
     await callback.message.answer("📦 Выбери тариф:", reply_markup=plans_kb(bundle_name, is_bundle=True))
 
 
 @dp.callback_query(lambda c: c.data == "goto_custom")
 async def prices_goto_custom(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
     await callback.answer()
-    USER_STATE.setdefault(callback.message.chat.id, {})
-    USER_STATE[callback.message.chat.id]["step"] = "custom"
+    USER_STATE.setdefault(user_id, {})
+    USER_STATE[user_id]["step"] = "custom"
     await callback.message.answer(
         "🔍 Выбери страну — мы уточним наличие и пришлём цену:",
         reply_markup=custom_countries_kb()
@@ -631,6 +717,9 @@ async def prices_goto_custom(callback: types.CallbackQuery):
 
 @dp.message(lambda msg: msg.text == "🛠 Поддержка")
 async def support(message: types.Message):
+    user_id = message.chat.id
+    update_user_timestamp(user_id)
+    
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
@@ -652,6 +741,7 @@ async def support(message: types.Message):
 # -----------------------------
 async def main():
     asyncio.create_task(update_usd_rate())
+    asyncio.create_task(cleanup_old_states())
     await dp.start_polling(bot)
 
 
