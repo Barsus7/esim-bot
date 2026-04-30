@@ -376,7 +376,11 @@ def custom_countries_kb() -> InlineKeyboardMarkup:
 # -----------------------------
 # START
 # -----------------------------
-from supabase_client import supabase
+from supabase import create_client
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 @dp.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.chat.id
@@ -384,7 +388,7 @@ async def start(message: types.Message):
     USER_STATE.pop(user_id, None)
     supabase.table("users").upsert({
     "user_id": message.chat.id,
-    "username": message.from_user.username
+    "username": message.from_user.username or "unknown"
 }).execute()
     
     await message.answer(
