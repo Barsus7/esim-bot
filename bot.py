@@ -3,6 +3,7 @@ import threading
 import logging
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
@@ -13,6 +14,7 @@ from aiogram.filters import Command
 import asyncio
 import aiohttp
 
+from supabase import create_client   # 👈 ВОТ ЭТО ДОБАВЬ
 # Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
