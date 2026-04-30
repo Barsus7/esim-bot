@@ -633,9 +633,8 @@ async def sbp(message: types.Message):
         "После оплаты отправь чек: @Who_let_the_dog_out_woof"
     )
 
-
-# -----------------------------
-# ОПЛАТА: USDT
+# ----------------------------- 
+# ОПЛАТА: USDT 
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
 async def usdt_pay(message: types.Message):
@@ -660,30 +659,28 @@ async def usdt_pay(message: types.Message):
         await message.answer("❌ Ошибка создания оплаты, попробуй позже")
         return
 
-invoice_id = str(invoice["result"]["invoice_id"])
-
-try:
-    supabase.table("invoices").insert({
-        "invoice_id": invoice_id,
-        "user_id": user_id,
-        "amount": amount_usdt,
-        "currency": "USDT",
-        "status": "active",
-        "plan": selected_plan[0]
-    }).execute()
-except Exception as e:
-    print("SUPABASE INSERT ERROR:", e)
-    
-    if not invoice.get("ok"):
-        await message.answer("❌ Ошибка создания оплаты, попробуй позже")
-        return
-
     invoice_data = invoice["result"]
+    invoice_id = str(invoice_data["invoice_id"])
 
-    USER_STATE[user_id]["invoice_id"] = invoice_data["invoice_id"]
+    # ✅ СОХРАНЕНИЕ В SUPABASE
+    try:
+        supabase.table("invoices").insert({
+            "invoice_id": invoice_id,
+            "user_id": user_id,
+            "amount": amount_usdt,
+            "currency": "USDT",
+            "status": "active",
+            "plan": plan[0]
+        }).execute()
+    except Exception as e:
+        print("SUPABASE INSERT ERROR:", e)
 
+    # ✅ сохраняем в память
+    USER_STATE[user_id]["invoice_id"] = invoice_id
+
+    # ✅ запускаем проверку оплаты
     asyncio.create_task(
-        wait_for_payment(user_id, invoice_data["invoice_id"])
+        wait_for_payment(user_id, invoice_id)
     )
 
     pay_url = invoice_data["pay_url"]
