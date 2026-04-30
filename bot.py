@@ -657,8 +657,8 @@ async def usdt_pay(message: types.Message):
     invoice = await create_invoice(amount_usdt, user_id)
 
     if not invoice.get("ok"):
-    await message.answer("❌ Ошибка создания оплаты, попробуй позже")
-    return
+        await message.answer("❌ Ошибка создания оплаты, попробуй позже")
+        return
 
 invoice_id = str(invoice["result"]["invoice_id"])
 
