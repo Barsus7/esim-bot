@@ -672,15 +672,18 @@ async def usdt_pay(message: types.Message):
 
     # ✅ СОХРАНЕНИЕ В SUPABASE
     try:
-        supabase.table("invoices").insert({
+        response = supabase.table("invoices").upsert({
             "invoice_id": invoice_id,
             "user_id": user_id,
-            "amount": amount_usdt,
+            "amount": str(amount_usdt),
             "currency": "USDT",
-            "status": "active",
-            "plan": plan[0],
+            "status": "pending",  # ← ВАЖНО
+            "plan": plan[0] if plan else "unknown",
             "created_at": datetime.utcnow().isoformat()
         }).execute()
+
+        print("SUPABASE RESPONSE:", response)
+    
     except Exception as e:
         print("SUPABASE INSERT ERROR:", e)
         await message.answer("❌ Ошибка базы, попробуй позже")
