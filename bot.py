@@ -50,8 +50,6 @@ threading.Thread(target=start_health_check_server, daemon=True).start()
 # -----------------------------
 # CONFIG
 # -----------------------------
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 TOKEN = os.getenv("BOT_TOKEN")
 CRYPTO_API_TOKEN = os.getenv("CRYPTO_API_TOKEN")
 bot = Bot(token=TOKEN)
