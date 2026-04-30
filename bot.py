@@ -549,13 +549,11 @@ async def back(message: types.Message):
 # Главное меню
 # -----------------------------
 
-@dp.message(lambda msg: msg.text == "🏠 Главное меню")
+@dp.message(lambda msg: msg.text and "Главное меню" in msg.text)
 async def go_home(message: types.Message):
     USER_STATE.pop(message.chat.id, None)
-    await message.answer(
-        "🏠 Главное меню",
-        reply_markup=main_kb
-    )
+    await message.answer("🏠 Главное меню", reply_markup=main_kb)
+    
 # -----------------------------
 # ОПЛАТА: СБП
 # -----------------------------
