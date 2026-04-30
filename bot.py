@@ -2,6 +2,7 @@ import os
 import threading
 import logging
 import time
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from aiogram import Bot, Dispatcher, types, F
@@ -677,10 +678,13 @@ async def usdt_pay(message: types.Message):
             "amount": amount_usdt,
             "currency": "USDT",
             "status": "active",
-            "plan": plan[0]
+            "plan": plan[0],
+            "created_at": datetime.utcnow().isoformat()
         }).execute()
     except Exception as e:
         print("SUPABASE INSERT ERROR:", e)
+        await message.answer("❌ Ошибка базы, попробуй позже")
+        return
 
     # ✅ сохраняем в память
     USER_STATE[user_id]["invoice_id"] = invoice_id
