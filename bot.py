@@ -56,6 +56,15 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # -----------------------------
+# SUPABASE CONFIG (1 раз при запуске)
+# -----------------------------
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# -----------------------------
 # STATE с автоочисткой
 # -----------------------------
 USER_STATE: dict[int, dict] = {}
@@ -374,21 +383,24 @@ def custom_countries_kb() -> InlineKeyboardMarkup:
 # -----------------------------
 # START
 # -----------------------------
-from supabase import create_client
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 @dp.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.chat.id
     update_user_timestamp(user_id)
+
+    # очищаем локальное состояние
     USER_STATE.pop(user_id, None)
-    supabase.table("users").upsert({
-    "user_id": message.chat.id,
-    "username": message.from_user.username or "unknown"
-}).execute()
-    
+
+    # сохраняем пользователя в Supabase
+    try:
+        supabase.table("users").upsert({
+            "user_id": user_id,
+            "username": message.from_user.username or "unknown"
+        }).execute()
+    except Exception as e:
+        # чтобы бот не падал если Supabase временно недоступен
+        print(f"Supabase error: {e}")
+
     await message.answer(
         "👋 На связи! Это eSIM для поездок 🌍\n\n"
         "🌐 Интернет заграницей\n"
