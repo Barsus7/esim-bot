@@ -278,6 +278,10 @@ COUNTRY_MEDIA = {
     "🇦🇪 ОАЭ": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/uae-la-gi-gom-nhung-nuoc-nao-va-cac-diem-1649926781.jpg",
     "🇹🇭 Таиланд": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/thailand-tour-package-1.jpg",
     "🇪🇬 Египет": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/Egypt-Holiday-Packages-Adeli-Kenya-Safaris-best-Africa-sustainable-safari-tour-company-in-Kenya.jpg",
+    "🇨🇳 Китай": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/China-Briefing-Shanghai-Industry-Economics-and-Policy.jpg",
+    "🇮🇩 Индонезия (Бали)": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/shutterstock_2431067013-scaled.jpg",
+    "🇯🇵 Япония": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/kabukicho-in-shinjuku-district-tokyo-japan-1216765429-8.jpg",
+    "🇻🇳 Вьетнам": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/vietnam-1-1611926800.profileImage.2x-jpg-webp.jpg"
 }
 
 
