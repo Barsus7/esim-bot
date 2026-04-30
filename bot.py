@@ -657,6 +657,24 @@ async def usdt_pay(message: types.Message):
     invoice = await create_invoice(amount_usdt, user_id)
 
     if not invoice.get("ok"):
+    await message.answer("❌ Ошибка создания оплаты, попробуй позже")
+    return
+
+invoice_id = str(invoice["result"]["invoice_id"])
+
+try:
+    supabase.table("invoices").insert({
+        "invoice_id": invoice_id,
+        "user_id": user_id,
+        "amount": amount_usdt,
+        "currency": "USDT",
+        "status": "active",
+        "plan": selected_plan[0]
+    }).execute()
+except Exception as e:
+    print("SUPABASE INSERT ERROR:", e)
+    
+    if not invoice.get("ok"):
         await message.answer("❌ Ошибка создания оплаты, попробуй позже")
         return
 
@@ -808,7 +826,14 @@ async def support(message: types.Message):
 async def main():
     asyncio.create_task(update_usd_rate())
     asyncio.create_task(cleanup_old_states())
-    await dp.start_polling(bot)
+
+    while True:
+        try:
+            logger.info("🚀 Start polling")
+            await dp.start_polling(bot)
+        except Exception as e:
+            logger.error(f"❌ Polling crashed: {e}")
+            await asyncio.sleep(3)
 
 
 if __name__ == "__main__":
