@@ -19,6 +19,9 @@ from supabase import create_client   # 👈 ВОТ ЭТО ДОБАВЬ
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+if os.getenv("IS_MAIN_INSTANCE") != "1":
+    print("Not main instance, exiting...")
+    exit()
 # -----------------------------
 # HTTP HEALTH CHECK SERVER
 # -----------------------------
