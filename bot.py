@@ -205,7 +205,6 @@ def cents_to_rub(cents: int) -> int:
 def cents_to_usdt(cents: int) -> str:
     return f"{cents / 100:.2f} USDT"
 
-
 # -----------------------------
 # DATA — обычные страны
 # -----------------------------
@@ -255,6 +254,18 @@ COUNTRIES = {
         ("15 GB", "30 дней", "без ограничений", 2800),
     ],
 }
+
+#------------------------
+# ФОТО СТРАН 
+#-------------------------
+
+COUNTRY_MEDIA = {
+    "🇹🇷 Турция": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/blog_41_240228092633_a-quick-guide-to-fethiye-turkey.jpg",
+    "🇦🇪 ОАЭ": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/uae-la-gi-gom-nhung-nuoc-nao-va-cac-diem-1649926781.jpg",
+    "🇹🇭 Таиланд": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/thailand-tour-package-1.jpg",
+    "🇪🇬 Египет": "https://rbipbflfopqnpwcykwil.supabase.co/storage/v1/object/public/Country%20photo/Egypt-Holiday-Packages-Adeli-Kenya-Safaris-best-Africa-sustainable-safari-tour-company-in-Kenya.jpg",
+}
+
 
 # -----------------------------
 # DATA — бандлы
@@ -449,12 +460,33 @@ async def custom_country_selected(callback: types.CallbackQuery):
 async def country(message: types.Message):
     user_id = message.chat.id
     update_user_timestamp(user_id)
-    
+
     USER_STATE.setdefault(user_id, {})
     USER_STATE[user_id]["country"] = message.text
     USER_STATE[user_id]["is_bundle"] = False
     USER_STATE[user_id]["step"] = "plan"
-    await message.answer("📦 Выбери тариф:", reply_markup=plans_kb(message.text))
+
+    photo = COUNTRY_MEDIA.get(message.text)
+
+    caption = (
+        f"🌍 {message.text}\n\n"
+        f"⚡ Стабильный интернет по всей стране\n"
+        f"📲 Подключение за 2 минуты\n"
+        f"🚀 Без роуминга и SIM-карт\n\n"
+        f"📦 Выбери тариф ниже:"
+    )
+
+    if photo:
+        await message.answer_photo(
+            photo=photo,
+            caption=caption,
+            reply_markup=plans_kb(message.text)
+        )
+    else:
+        await message.answer(
+            caption,
+            reply_markup=plans_kb(message.text)
+        )
 
 
 # -----------------------------
