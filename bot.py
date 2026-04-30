@@ -337,15 +337,17 @@ def countries_kb() -> ReplyKeyboardMarkup:
 
 def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup:
     plans = BUNDLES[country_name] if is_bundle else COUNTRIES[country_name]
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"{p[0]} — {cents_to_rub(p[3])} ₽ ({cents_to_usd(p[3])})",
-                callback_data=f"plan_{i}"
-            )]
-            for i, p in enumerate(plans)
-        ]
-    )
+    keyboard = [
+        [InlineKeyboardButton(
+            text=f"{p[0]} — {cents_to_rub(p[3])} ₽ ({cents_to_usd(p[3])})",
+            callback_data=f"plan_{i}"
+        )]
+        for i, p in enumerate(plans)
+    ]
+    # Добавляем кнопку "Главное меню" в конец
+    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def custom_countries_kb() -> InlineKeyboardMarkup:
@@ -544,6 +546,27 @@ async def back(message: types.Message):
 
 
 # -----------------------------
+# ГЛАВНОЕ МЕНЮ (из кнопки)
+# -----------------------------
+@dp.callback_query(lambda c: c.data == "main_menu")
+async def main_menu_callback(callback: types.CallbackQuery):
+    user_id = callback.message.chat.id
+    update_user_timestamp(user_id)
+    
+    await callback.answer()
+    
+    # Очищаем состояние пользователя
+    USER_STATE.pop(user_id, None)
+    USER_TIMESTAMPS.pop(user_id, None)
+    
+    await callback.message.answer(
+        "👋 Главное меню\n\n"
+        "Выбери что дальше:",
+        reply_markup=main_kb
+    )
+
+
+# -----------------------------
 # ОПЛАТА: СБП
 # -----------------------------
 @dp.message(lambda msg: msg.text == "💳 Перевод СБП")
@@ -652,6 +675,10 @@ async def prices(message: types.Message):
 
     country_rows.append([
         InlineKeyboardButton(text="🔍 Страна по запросу", callback_data="goto_custom")
+    ])
+    
+    country_rows.append([
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")
     ])
 
     kb = InlineKeyboardMarkup(inline_keyboard=country_rows)
