@@ -1,25 +1,3 @@
-# -----
-# something not good
-# -----
-import os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-def run():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    server.serve_forever()
-
-threading.Thread(target=run, daemon=True).start()
-# -----
-
-
 import os
 import asyncio
 import aiohttp
@@ -67,7 +45,7 @@ async def check_invoice(invoice_id: int):
         "Crypto-Pay-API-Token": CRYPTO_API_TOKEN
     }
     params = {
-        "invoice_ids": invoice_id
+        "invoice_ids": str(invoice_id)
     }
 
     async with aiohttp.ClientSession() as session:
@@ -513,7 +491,7 @@ async def usdt_pay(message: types.Message):
     USER_STATE[user_id]["invoice_id"] = invoice_data["invoice_id"]
 
     asyncio.create_task(
-    wait_for_payment(user_id, invoice_data["invoice_id"])
+        wait_for_payment(user_id, invoice_data["invoice_id"])
     )
 
     pay_url = invoice_data["pay_url"]
