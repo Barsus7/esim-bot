@@ -313,7 +313,7 @@ payment_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Перевод СБП")],
         [KeyboardButton(text="💰 USDT (сеть TRC20)")],
-        [KeyboardButton(text="🔄 Главное меню ")],
+        [KeyboardButton(text="🏠 Главное меню")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -544,6 +544,18 @@ async def back(message: types.Message):
         await message.answer("Главное меню", reply_markup=main_kb)
 
 
+
+# ----------------------------
+# Главное меню
+# -----------------------------
+
+@dp.message(lambda msg: msg.text == "🏠 Главное меню")
+async def go_home(message: types.Message):
+    USER_STATE.pop(message.chat.id, None)
+    await message.answer(
+        "🏠 Главное меню",
+        reply_markup=main_kb
+    )
 # -----------------------------
 # ОПЛАТА: СБП
 # -----------------------------
