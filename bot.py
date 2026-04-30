@@ -313,6 +313,7 @@ payment_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Перевод СБП")],
         [KeyboardButton(text="💰 USDT (сеть TRC20)")],
+        [KeyboardButton(text="🏠 Главное меню")]
         [KeyboardButton(text="⬅️ Назад")]
     ],
     resize_keyboard=True
@@ -344,11 +345,6 @@ def plans_kb(country_name: str, is_bundle: bool = False) -> InlineKeyboardMarkup
         )]
         for i, p in enumerate(plans)
     ]
-    # Добавляем кнопку "Главное меню" в конец
-    keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")])
-    
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
 
 def custom_countries_kb() -> InlineKeyboardMarkup:
     rows = []
