@@ -1,6 +1,7 @@
 import os
-import asyncio
-import aiohttp
+import threading
+import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
@@ -8,6 +9,43 @@ from aiogram.types import (
     LabeledPrice
 )
 from aiogram.filters import Command
+import asyncio
+import aiohttp
+
+# Логирование
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# -----------------------------
+# HTTP HEALTH CHECK SERVER
+# -----------------------------
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"OK")
+    
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Отключаем логирование каждого запроса
+        pass
+
+
+def start_health_check_server():
+    """Запускает HTTP сервер для health check"""
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logger.info(f"Health check server started on port {port}")
+    server.serve_forever()
+
+
+# Запускаем HTTP сервер в отдельном потоке
+threading.Thread(target=start_health_check_server, daemon=True).start()
 
 # -----------------------------
 # CONFIG
