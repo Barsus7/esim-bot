@@ -627,18 +627,24 @@ async def sbp(message: types.Message):
     
     state = USER_STATE.get(user_id, {})
     plan = state.get("plan")
-
     if not plan:
         await message.answer("⚠️ Сначала выбери тариф")
         return
-
+    
     rub = cents_to_rub(plan[3])
-
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить по ссылке", url="https://web.tribute.tg/p/vmr")]
+    ])
+    
     await message.answer(
-        f"💳 Оплата через СБП\n\n"
+        f"💳 Оплата\n\n"
         f"📦 {plan[0]} — {rub} ₽\n\n"
-        "Переведи на номер: +79853808937\n"
-        "После оплаты отправь чек: @Who_let_the_dog_out_woof"
+        "Выбери способ:\n"
+        "• По кнопке ниже — через Tribute\n"
+        "• СБП: +79853808937\n\n"
+        "После оплаты отправь чек: @Who_let_the_dog_out_woof",
+        reply_markup=keyboard
     )
 
 # ----------------------------- 
