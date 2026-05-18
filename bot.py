@@ -642,7 +642,6 @@ async def sbp(message: types.Message):
         f"📦 {plan[0]} — {rub} ₽\n\n"
         "Выбери способ:\n"
         "• По кнопке ниже — через Tribute\n"
-        "• СБП: +79853808937\n\n"
         "После оплаты отправь чек: @Who_let_the_dog_out_woof",
         reply_markup=keyboard
     )
