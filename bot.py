@@ -341,8 +341,8 @@ main_kb = ReplyKeyboardMarkup(
 
 payment_kb = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="💳 Перевод СБП")],
-        [KeyboardButton(text="💰 USDT (сеть TRC20)")],
+        [KeyboardButton(text="💳 Перевод СБП / Оплата картой")],
+        [KeyboardButton(text="💰 USDT (разные сети)")],
         [KeyboardButton(text="🏠 Главное меню")],
         [KeyboardButton(text="⬅️ Назад")]
     ],
@@ -620,7 +620,7 @@ async def go_home(message: types.Message):
 # -----------------------------
 # ОПЛАТА: СБП
 # -----------------------------
-@dp.message(lambda msg: msg.text == "💳 Перевод СБП")
+@dp.message(lambda msg: msg.text == "💳 Перевод СБП / Оплата картой")
 async def sbp(message: types.Message):
     user_id = message.chat.id
     update_user_timestamp(user_id)
@@ -649,7 +649,7 @@ async def sbp(message: types.Message):
 # ----------------------------- 
 # ОПЛАТА: USDT 
 # -----------------------------
-@dp.message(lambda msg: msg.text == "💰 USDT (сеть TRC20)")
+@dp.message(lambda msg: msg.text == "💰 USDT (разные сети)")
 async def usdt_pay(message: types.Message):
     user_id = message.chat.id
     update_user_timestamp(user_id)
